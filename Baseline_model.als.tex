@@ -1,0 +1,145 @@
+% Content of High_Assurance_PCC.als.tex
+\subsection*{Complete Specification: High-Continuous Security Model}
+\label{app:pcc_alloy}
+
+The complete, structurally bounded Alloy 6.2 specification utilized to verify counterfactual validity and generate the multi-tenant topological breach traces is detailed below.
+\begin{lstlisting}[language=Alloy, caption={Complete Multi-Agent \& Isolation Architecture Verification Script}]
+
+// Paste your full, raw Alloy code here exactly as it is.
+// No backslashes or special LaTeX formatting needed inside this block.
+/*
+    Alloy 6.2 Framework: Multi-Agent Ensemble Verification Model
+    Designed to test counterfactual validity for 3 Configurations:
+    1. Pool Allocator  2. Expert Routing  3. Federated Learning
+*/
+
+// --- Core Structural Domains ---
+
+abstract sig DataLevel {}
+one sig High, Low extends DataLevel {}
+
+sig User {
+    dataLevel: one DataLevel
+}
+
+fact UserSecurityBaseline {
+    all u: User | u.dataLevel = High
+}
+
+abstract sig AgentRole {}
+one sig Leader, Follower extends AgentRole {}
+
+sig Agent {
+    role: one AgentRole
+}
+
+sig Ensemble {
+    primaryUser: one User,
+    assignedAgents: set Agent
+}
+
+abstract sig SessionStep {}
+one sig InitSession, ActiveProcessing, PostReset extends SessionStep {}
+
+sig State {
+    step: one SessionStep,
+    agentWorkspace: Agent -> set User,
+    trainingRecord: Agent -> set User
+}
+
+// --- Structural Configuration Invariants ---
+
+pred StrictEnsembleComposition [e: Ensemble] {
+    // Structural Rule: An ensemble must maintain exactly one Leader node
+    one a: e.assignedAgents | a.role = Leader
+}
+
+pred DisjointEnsembles {
+    // Structural Rule: No follower node can handle processing across two groups simultaneously
+    all disj e1, e2: Ensemble | no (e1.assignedAgents & e2.assignedAgents)
+}
+
+// --- Configuration Transition Models ---
+
+// CONFIGURATIONS 1 & 2: Stateless Pool / Expert Routing Execution
+pred ProcessAndResetStateless[s, sNext: State, e: Ensemble] {
+    s.step = InitSession
+    sNext.step = PostReset
+    
+    // MANDATORY PCC CLEANSE: Memory must be cleared after session completes
+    all a: e.assignedAgents | sNext.agentWorkspace[a] = none 
+    
+    // Static verification: No training occur from live runs
+    all a: Agent | sNext.trainingRecord[a] = s.trainingRecord[a]
+}
+
+// CONFIGURATION 3: Federated Learning Context Update Execution
+pred ProcessAndResetFederated[s, sNext: State, e: Ensemble] {
+    s.step = InitSession
+    sNext.step = PostReset
+    
+    // Live sensitive workspace must still be wiped
+    all a: e.assignedAgents | sNext.agentWorkspace[a] = none
+    
+    // Federated updates: The data processed updates the static parameters
+    all a: e.assignedAgents | sNext.trainingRecord[a] = s.trainingRecord[a] + e.primaryUser
+    all a: Agent - e.assignedAgents | sNext.trainingRecord[a] = s.trainingRecord[a]
+}
+
+// VULNERABLE TRANSITION: Failure to invoke the purge routine
+pred BrokenResetTransition[s, sNext: State, e: Ensemble] {
+    s.step = InitSession
+    sNext.step = PostReset
+    
+    // Core data leak: Workspace remnants remain un-cleared
+    all a: e.assignedAgents | sNext.agentWorkspace[a] = e.primaryUser
+    all a: Agent | sNext.trainingRecord[a] = s.trainingRecord[a]
+}
+
+// --- Counterfactual Safety Assertions ---
+
+// COUNTERFACTUAL 1: Multiple Leaders in a single ensemble breaks uniform command
+assert SingleLeaderPerEnsembleInvariant {
+    all e: Ensemble | StrictEnsembleComposition[e] => #{a: e.assignedAgents | a.role = Leader} = 1
+}
+
+// COUNTERFACTUAL 2: One Follower crossing boundaries into two distinct ensembles leaks multi-tenant data
+assert FollowerIsolationSafe {
+    all s, sNext: State, e1, e2: Ensemble | 
+    all sharedFollower: Agent | { // Moved variable to front of scope
+        (
+            e1.primaryUser != e2.primaryUser and
+            sharedFollower.role = Follower and
+            sharedFollower in e1.assignedAgents and
+            sharedFollower in e2.assignedAgents and
+            ProcessAndResetFederated[s, sNext, e1] and
+            ProcessAndResetFederated[s, sNext, e2]
+        )
+        => 
+        // Now Alloy can perfectly resolve the name "sharedFollower" here
+        (no (sNext.trainingRecord[sharedFollower] & e1.primaryUser) or no (sNext.trainingRecord[sharedFollower] & e2.primaryUser))
+    }
+}
+
+
+// COUNTERFACTUAL 3: Teardown Failure leaves residue data inside the container workspace
+assert CorePCCResetInvariant {
+    all s, sNext: State, e: Ensemble | {
+        BrokenResetTransition[s, sNext, e]
+        => 
+        all a: e.assignedAgents | sNext.agentWorkspace[a] = none
+    }
+}
+
+// --- Run Commands ---
+
+// 1. Checks basic structural logic (Should pass cleanly)
+check SingleLeaderPerEnsembleInvariant for 4 State, 2 Ensemble, 4 Agent, 2 User
+
+// 2. FORCES COUNTEREXAMPLE: Demonstrates parameters blend when an agent serves two users
+check FollowerIsolationSafe for 4 State, 2 Ensemble, 4 Agent, 2 User
+
+// 3. FORCES COUNTEREXAMPLE: Demonstrates residual state storage when reset routines fail
+check CorePCCResetInvariant for 4 State, 1 Ensemble, 3 Agent, 2 User
+\end{lstlisting}
+
