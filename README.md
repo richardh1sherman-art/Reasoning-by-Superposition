@@ -5,9 +5,12 @@ An accelerated framework fusing Satisfiability Modulo Theories (SMT) and Inducti
 
 Core Features
 
-continuous thought fram work cleanly bridges the gap between neural networks and
+continuous thought cleanly bridges the gap between neural networks and
 symbolic logic expression. 
-translating discrete first-order Horn clauses into fluid spatial superpositions, the system empowers GPU hardware arrays to perform high-throughput
+
+translating discrete first-order Horn clauses into fluid spatial superpositions
+
+the system empowers GPU hardware arrays to perform high-throughput
 reasoning optimizations. 
 
 Install the prerequisite environment modules: ```bash pip install -r requirements.txt ```
